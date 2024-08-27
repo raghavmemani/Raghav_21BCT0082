@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Wicket</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        #gameBoard {
+            display: grid;
+            grid-template-columns: repeat(5, 60px);
+            grid-template-rows: repeat(5, 60px);
+            gap: 5px;
+            margin-bottom: 20px;
+        }
+
+        .cell {
+            width: 60px;
+            height: 60px;
+            background-color: #262626;
+            border: 2px solid #444;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .cell:hover {
+            background-color: #3a3a3a;
+        }
+
+        .highlighted {
+            background-color: #4a90e2;
+        }
+
+        .currentPlayer {
+            font-size: 22px;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        #selectedPiece {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        #moveControls {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+
+        .moveButton {
+            background-color: #1a1a1a;
+            border: 2px solid #444;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            text-decoration: none;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .moveButton:hover {
+            background-color: #444;
+        }
+
+        #resetButton {
+            background-color: #d9534f;
+            border: 2px solid #d43f3a;
+            color: white;
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        #resetButton:hover {
+            background-color: #c9302c;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="currentPlayer" id="currentPlayer">Current Player: A</div>
+        <div id="gameBoard">
+            <!-- Cells will be dynamically generated -->
+        </div>
+        <div id="selectedPiece">Selected: None</div>
+        <div id="moveControls">
+            <button class="moveButton" onclick="move('L')">L</button>
+            <button class="moveButton" onclick="move('R')">R</button>
+            <button class="moveButton" onclick="move('F')">F</button>
+            <button class="moveButton" onclick="move('B')">B</button>
+        </div>
+        <button id="resetButton" onclick="resetGame()">Reset Game</button>
+    </div>
+
+    <script>
+        const socket = new WebSocket('ws://localhost:8080');
+        let player = 'A';
+        let selectedPiece = null;
+
+        // Initialize the game board
+        function createBoard() {
+            const gameBoard = document.getElementById('gameBoard');
+            for (let i = 0; i < 25; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.id = `cell-${i}`;
+                cell.onclick = () => selectPiece(i);
+                gameBoard.appendChild(cell);
+            }
+        }
+
+        // Select a piece on the board
+        function selectPiece(index) {
+            if (selectedPiece !== null) {
+                document.getElementById(`cell-${selectedPiece}`).classList.remove('highlighted');
+            }
+            selectedPiece = index;
+            document.getElementById(`cell-${selectedPiece}`).classList.add('highlighted');
+            document.getElementById('selectedPiece').innerText = `Selected: ${document.getElementById(`cell-${selectedPiece}`).innerText}`;
+        }
+
+        // Handle move buttons
+        function move(direction) {
+            if (selectedPiece === null) {
+                alert('Please select a piece first.');
+                return;
+            }
+            // Send move to server
+            socket.send(JSON.stringify({
+                type: 'move',
+                player: player,
+                piece: selectedPiece,
+                direction: direction
+            }));
+        }
+
+        // Handle reset button
+        function resetGame() {
+            if (confirm('Are you sure you want to reset the game?')) {
+                socket.send(JSON.stringify({
+                    type: 'reset'
+                }));
+            }
+        }
+
+        // Handle WebSocket messages
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            console.log("Received data: ", data);  // Debug log
+
+            if (data.type === 'updateBoard') {
+                updateBoard(data.board);
+            }
+
+            if (data.type === 'switchPlayer') {
+                player = data.currentPlayer;
+                document.getElementById('currentPlayer').innerText = `Current Player: ${player}`;
+            }
+
+            if (data.type === 'resetGame') {
+                updateBoard(data.board);
+                document.getElementById('currentPlayer').innerText = `Current Player: ${data.currentPlayer}`;
+                selectedPiece = null;
+                document.getElementById('selectedPiece').innerText = 'Selected: None';
+                alert('The game has been reset.');
+            }
+        };
+
+        // Update the board based on server data
+        function updateBoard(board) {
+            console.log("Updating board with: ", board);  // Debug log
+            for (let i = 0; i < 25; i++) {
+                const cell = document.getElementById(`cell-${i}`);
+                const newContent = board[i] || ''; // In case of empty cells
+                console.log(`Updating cell ${i} with content: ${newContent}`);  // Debug log
+                cell.innerText = newContent;
+            }
+        }
+
+        createBoard();
+    </script>
+</body>
+</html>

@@ -1,7 +1,19 @@
+const express = require('express');
 const WebSocket = require('ws');
+const path = require('path');
 
-const wss = new WebSocket.Server({ port: 8080 });
+const app = express();
+const server = require('http').createServer(app);
+const wss = new WebSocket.Server({ server });
 
+// Serve static files from the 'public' directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// WebSocket server code
 let board = [
     'A-P1', 'A-P2', 'A-H1', 'A-H2', 'A-P3',
     '', '', '', '', '',
@@ -11,28 +23,14 @@ let board = [
 ];
 
 let currentPlayer = 'A';
-let playerConnections = {}; // To store player information for each connection
 let connectionCount = 0;
 
 wss.on('connection', ws => {
     connectionCount++;
     console.log(`New client connected. Total connections: ${connectionCount}`);
+    console.log(`Current player: ${currentPlayer}`);
+    console.log(`Board status: ${JSON.stringify(board)}`);
 
-    let player;
-    if (connectionCount === 1) {
-        player = 'A';
-    } else if (connectionCount === 2) {
-        player = 'B';
-    } else {
-        ws.send(JSON.stringify({ type: 'error', message: 'Game is full' }));
-        ws.close();
-        return;
-    }
-
-    playerConnections[ws] = player;
-    console.log(`Assigned Player ${player} to a new connection.`);
-
-    // Send the initial board and current player to the new client
     ws.send(JSON.stringify({
         type: 'updateBoard',
         board: board
@@ -52,10 +50,6 @@ wss.on('connection', ws => {
             const validMove = handleMove(data.player, data.piece, data.direction);
 
             if (validMove) {
-                console.log(`Board after move:`, board); // Log the board status
-                console.log(`Current Player's turn: ${currentPlayer}`);
-
-                // Broadcast the updated board and player turn to all clients
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
                         client.send(JSON.stringify({
@@ -74,13 +68,24 @@ wss.on('connection', ws => {
                     message: 'Invalid move or not your turn'
                 }));
             }
+        } else if (data.type === 'reset') {
+            resetGame();
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                        type: 'resetGame',
+                        board: board,
+                        currentPlayer: currentPlayer
+                    }));
+                }
+            });
         }
     });
 
     ws.on('close', () => {
         connectionCount--;
-        console.log(`Client disconnected. Total connections: ${connectionCount}`);
-        delete playerConnections[ws];
+        console.log('Client disconnected');
+        console.log(`Total connections: ${connectionCount}`);
     });
 });
 
@@ -95,16 +100,16 @@ function handleMove(player, piece, direction) {
 
     switch (direction) {
         case 'L':
-            newIndex = index % 5 !== 0 ? index - 1 : null;  // Prevent moving left out of bounds
+            newIndex = index % 5 !== 0 ? index - 1 : null;
             break;
         case 'R':
-            newIndex = (index + 1) % 5 !== 0 ? index + 1 : null;  // Prevent moving right out of bounds
+            newIndex = (index + 1) % 5 !== 0 ? index + 1 : null;
             break;
         case 'F':
-            newIndex = index >= 5 ? index - 5 : null;  // Prevent moving forward out of bounds
+            newIndex = index >= 5 ? index - 5 : null;
             break;
         case 'B':
-            newIndex = index < 20 ? index + 5 : null;  // Prevent moving backward out of bounds
+            newIndex = index < 20 ? index + 5 : null;
             break;
     }
 
@@ -120,3 +125,19 @@ function handleMove(player, piece, direction) {
         return false;
     }
 }
+
+function resetGame() {
+    board = [
+        'A-P1', 'A-P2', 'A-H1', 'A-H2', 'A-P3',
+        '', '', '', '', '',
+        '', '', '', '', '',
+        '', '', '', '', '',
+        'B-P1', 'B-P2', 'B-H1', 'B-H2', 'B-P3'
+    ];
+    currentPlayer = 'A';
+    console.log('Game reset. Board status:', board);
+}
+
+// Start the server
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
